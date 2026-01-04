@@ -1,6 +1,6 @@
 {
   "name": "@brainz_llc/js",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "BrainzLab JavaScript SDK - Stimulus controllers for full-stack observability",
   "main": "dist/index.js",
