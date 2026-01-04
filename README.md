@@ -1,23 +1,41 @@
-# @brainzlab/js
+# @brainz_llc/js
 
 JavaScript SDK for BrainzLab - Full-stack observability for JavaScript/TypeScript applications with Stimulus controllers.
 
 ## Installation
 
 ```bash
-npm install @brainzlab/js
+npm install @brainz_llc/js
 # or
-yarn add @brainzlab/js
+yarn add @brainz_llc/js
 ```
 
-## Usage with Stimulus (Rails)
+## Usage with Importmaps (Rails 7+)
+
+Add to your `config/importmap.rb`:
+
+```ruby
+pin "@brainz_llc/js", to: "https://cdn.jsdelivr.net/npm/@brainz_llc/js@0.1.1/dist/index.esm.js"
+pin "@hotwired/stimulus", to: "stimulus.min.js", preload: true
+```
+
+Then in your `app/javascript/controllers/index.js`:
+
+```javascript
+import { application } from "./application"
+import { BrainzlabController } from "@brainz_llc/js"
+
+application.register("brainzlab", BrainzlabController)
+```
+
+## Usage with Stimulus (esbuild/webpack)
 
 ### 1. Register the controller
 
 ```javascript
 // app/javascript/controllers/index.js
 import { application } from "./application"
-import { BrainzlabController } from "@brainzlab/js"
+import { BrainzlabController } from "@brainz_llc/js"
 
 application.register("brainzlab", BrainzlabController)
 ```
@@ -52,7 +70,7 @@ application.register("brainzlab", BrainzlabController)
 ## Standalone Usage
 
 ```javascript
-import { init } from "@brainzlab/js"
+import { init } from "@brainz_llc/js"
 
 init({
   endpoint: "https://platform.brainzlab.ai",
