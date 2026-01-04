@@ -100,12 +100,18 @@ class Transport {
     const events = [...this.queue];
     this.queue = [];
 
-    // Group events by their target endpoint
+    // Group events by their target endpoint (only if we have both endpoint and API key)
     const eventsByEndpoint: EventsByEndpoint = {};
+    const skippedEvents: QueuedEvent[] = [];
 
     for (const event of events) {
       const endpoint = getEndpointForType(event.type);
-      if (!endpoint) continue;
+      const apiKey = getApiKeyForType(event.type) || config.apiKey;
+
+      if (!endpoint || !apiKey) {
+        skippedEvents.push(event);
+        continue;
+      }
 
       if (!eventsByEndpoint[endpoint]) {
         eventsByEndpoint[endpoint] = [];
@@ -113,24 +119,39 @@ class Transport {
       eventsByEndpoint[endpoint].push(event);
     }
 
-    // Send to each endpoint
-    const sendPromises = Object.entries(eventsByEndpoint).map(([endpoint, endpointEvents]) =>
-      this.sendToEndpoint(endpoint, endpointEvents)
+    if (skippedEvents.length > 0 && config.debug) {
+      console.warn(`[BrainzLab] Skipped ${skippedEvents.length} events (no endpoint or API key configured)`);
+    }
+
+    // Send to each endpoint independently (don't fail all if one fails)
+    const results = await Promise.allSettled(
+      Object.entries(eventsByEndpoint).map(([endpoint, endpointEvents]) =>
+        this.sendToEndpoint(endpoint, endpointEvents)
+      )
     );
 
-    try {
-      await Promise.all(sendPromises);
+    // Check results and re-queue failed events
+    const failedEvents: QueuedEvent[] = [];
+    let successCount = 0;
 
-      if (config.debug) {
-        console.log(`[BrainzLab] Flushed ${events.length} events to ${Object.keys(eventsByEndpoint).length} endpoints`);
+    results.forEach((result, index) => {
+      const [endpoint, endpointEvents] = Object.entries(eventsByEndpoint)[index];
+      if (result.status === 'rejected') {
+        failedEvents.push(...endpointEvents);
+        if (config.debug) {
+          console.error(`[BrainzLab] Failed to send to ${endpoint}:`, result.reason);
+        }
+      } else {
+        successCount += endpointEvents.length;
       }
-    } catch (error) {
-      // Re-queue events on failure
-      this.queue = [...events, ...this.queue];
+    });
 
-      if (config.debug) {
-        console.error('[BrainzLab] Flush failed:', error);
-      }
+    if (failedEvents.length > 0) {
+      this.queue = [...failedEvents, ...this.queue];
+    }
+
+    if (config.debug && successCount > 0) {
+      console.log(`[BrainzLab] Flushed ${successCount} events to ${Object.keys(eventsByEndpoint).length} endpoints`);
     }
   }
 
@@ -141,8 +162,12 @@ class Transport {
     const eventType = events[0]?.type || 'custom';
     const apiKey = getApiKeyForType(eventType) || config.apiKey;
 
+    // Skip if no API key (shouldn't happen since we filter in flush, but just in case)
     if (!apiKey) {
-      throw new Error(`No API key configured for event type: ${eventType}`);
+      if (config.debug) {
+        console.warn(`[BrainzLab] No API key for event type: ${eventType}, skipping`);
+      }
+      return;
     }
 
     const response = await fetch(endpoint, {
