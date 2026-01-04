@@ -1,10 +1,19 @@
 import { Controller } from '@hotwired/stimulus';
-import { configure, getConfig, isConfigured, BrainzLabConfig } from '../config';
+import { configure, getConfig, BrainzLabConfig, ProductEndpoints } from '../config';
 import { sendEvent, getSessionId, flushEvents } from '../transport';
 import { setupErrorTracking, teardownErrorTracking } from '../utils/errors';
 import { setupNetworkTracking, teardownNetworkTracking } from '../utils/network';
 import { setupPerformanceTracking, teardownPerformanceTracking } from '../utils/performance';
 import { setupConsoleTracking, teardownConsoleTracking } from '../utils/console';
+
+// Extend Window to include BrainzLabConfig
+declare global {
+  interface Window {
+    BrainzLabConfig?: Partial<BrainzLabConfig> & {
+      endpoints?: ProductEndpoints;
+    };
+  }
+}
 
 /**
  * BrainzLab Stimulus Controller
@@ -12,15 +21,32 @@ import { setupConsoleTracking, teardownConsoleTracking } from '../utils/console'
  * Main controller for initializing BrainzLab monitoring.
  * Add to your application layout to enable full-stack observability.
  *
- * Usage:
- * <body data-controller="brainzlab"
- *       data-brainzlab-endpoint-value="https://platform.brainzlab.ai"
- *       data-brainzlab-api-key-value="your-api-key"
- *       data-brainzlab-environment-value="production">
+ * Configuration can come from:
+ * 1. window.BrainzLabConfig (set by brainzlab_js_config helper)
+ * 2. Data attributes on the element
+ *
+ * Usage with Ruby helper (recommended):
+ *   <%= brainzlab_js_config %>
+ *   <body data-controller="brainzlab">
+ *
+ * Usage with data attributes:
+ *   <body data-controller="brainzlab"
+ *         data-brainzlab-reflex-endpoint-value="http://localhost:4003/api/v1/browser"
+ *         data-brainzlab-pulse-endpoint-value="http://localhost:4004/api/v1/browser"
+ *         data-brainzlab-api-key-value="your-api-key">
  */
 export default class BrainzlabController extends Controller {
   static values = {
+    // Legacy single endpoint (Platform mode)
     endpoint: String,
+
+    // Product-specific endpoints
+    reflexEndpoint: String,   // errors → Reflex
+    pulseEndpoint: String,    // performance, network → Pulse
+    recallEndpoint: String,   // console → Recall
+    signalEndpoint: String,   // custom → Signal
+
+    // Common config
     apiKey: String,
     projectId: String,
     environment: { type: String, default: 'production' },
@@ -35,6 +61,10 @@ export default class BrainzlabController extends Controller {
   };
 
   declare endpointValue: string;
+  declare reflexEndpointValue: string;
+  declare pulseEndpointValue: string;
+  declare recallEndpointValue: string;
+  declare signalEndpointValue: string;
   declare apiKeyValue: string;
   declare projectIdValue: string;
   declare environmentValue: string;
@@ -56,20 +86,44 @@ export default class BrainzlabController extends Controller {
   }
 
   private initializeBrainzLab(): void {
-    // Build config from data attributes
+    // Start with window config if available (from brainzlab_js_config helper)
+    const windowConfig = window.BrainzLabConfig || {};
+
+    // Build endpoints from data attributes or window config
+    const endpoints: ProductEndpoints = windowConfig.endpoints || {};
+
+    // Override with data attributes if provided
+    if (this.reflexEndpointValue) {
+      endpoints.errors = this.reflexEndpointValue;
+    }
+    if (this.pulseEndpointValue) {
+      endpoints.performance = this.pulseEndpointValue;
+      endpoints.network = this.pulseEndpointValue;
+    }
+    if (this.recallEndpointValue) {
+      endpoints.console = this.recallEndpointValue;
+    }
+    if (this.signalEndpointValue) {
+      endpoints.custom = this.signalEndpointValue;
+    }
+
+    // Build config, preferring data attributes over window config
     const config: BrainzLabConfig = {
-      endpoint: this.endpointValue,
-      apiKey: this.apiKeyValue,
-      projectId: this.projectIdValue,
-      environment: this.environmentValue,
-      service: this.serviceValue,
-      release: this.releaseValue,
-      debug: this.debugValue,
-      sampleRate: this.sampleRateValue,
-      enableErrors: this.enableErrorsValue,
-      enableNetwork: this.enableNetworkValue,
-      enablePerformance: this.enablePerformanceValue,
-      enableConsole: this.enableConsoleValue,
+      // Use endpoints if any are configured, otherwise fall back to single endpoint
+      endpoints: Object.keys(endpoints).length > 0 ? endpoints : undefined,
+      endpoint: this.endpointValue || windowConfig.endpoint,
+
+      apiKey: this.apiKeyValue || windowConfig.apiKey || '',
+      projectId: this.projectIdValue || windowConfig.projectId,
+      environment: this.environmentValue || windowConfig.environment || 'production',
+      service: this.serviceValue || windowConfig.service,
+      release: this.releaseValue || windowConfig.release,
+      debug: this.debugValue || windowConfig.debug || false,
+      sampleRate: this.sampleRateValue || windowConfig.sampleRate || 1.0,
+      enableErrors: this.hasValue('enableErrors') ? this.enableErrorsValue : (windowConfig.enableErrors ?? true),
+      enableNetwork: this.hasValue('enableNetwork') ? this.enableNetworkValue : (windowConfig.enableNetwork ?? true),
+      enablePerformance: this.hasValue('enablePerformance') ? this.enablePerformanceValue : (windowConfig.enablePerformance ?? true),
+      enableConsole: this.hasValue('enableConsole') ? this.enableConsoleValue : (windowConfig.enableConsole ?? true),
     };
 
     // Initialize SDK
@@ -106,6 +160,10 @@ export default class BrainzlabController extends Controller {
     if (config.debug) {
       console.log('[BrainzLab] Initialized with session:', getSessionId());
     }
+  }
+
+  private hasValue(name: string): boolean {
+    return this.element.hasAttribute(`data-brainzlab-${name.replace(/([A-Z])/g, '-$1').toLowerCase()}-value`);
   }
 
   private teardownBrainzLab(): void {

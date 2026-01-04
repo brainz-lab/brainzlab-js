@@ -297,9 +297,24 @@ function observeResources(): void {
       const config = getConfig();
 
       for (const entry of entries) {
-        // Skip very small resources and brainzlab endpoint
+        // Skip very small resources and brainzlab endpoints
         if (entry.duration < 10) continue;
-        if (entry.name.includes(config.endpoint)) continue;
+
+        // Skip our own endpoints
+        let isOwnEndpoint = false;
+        if (config.endpoint && entry.name.includes(config.endpoint)) {
+          isOwnEndpoint = true;
+        }
+        if (config.endpoints) {
+          const endpoints = Object.values(config.endpoints).filter(Boolean) as string[];
+          for (const endpoint of endpoints) {
+            if (entry.name.includes(endpoint)) {
+              isOwnEndpoint = true;
+              break;
+            }
+          }
+        }
+        if (isOwnEndpoint) continue;
 
         // Only report slow resources (> 500ms)
         if (entry.duration > 500) {

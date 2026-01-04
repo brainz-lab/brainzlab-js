@@ -22,9 +22,19 @@ function shouldIgnoreUrl(url: string): boolean {
   const config = getConfig();
   const ignorePatterns = config.ignoreUrls || [];
 
-  // Always ignore requests to our own endpoint
-  if (url.includes(config.endpoint)) {
+  // Always ignore requests to our own endpoints
+  if (config.endpoint && url.includes(config.endpoint)) {
     return true;
+  }
+
+  // Check all product endpoints
+  if (config.endpoints) {
+    const endpoints = Object.values(config.endpoints).filter(Boolean) as string[];
+    for (const endpoint of endpoints) {
+      if (url.includes(endpoint)) {
+        return true;
+      }
+    }
   }
 
   return ignorePatterns.some((pattern) => {

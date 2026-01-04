@@ -1,7 +1,13 @@
 /**
- * Transport layer for sending events to BrainzLab API
+ * Transport layer for sending events to BrainzLab products
+ *
+ * Routes events to the appropriate product endpoint:
+ * - error → Reflex
+ * - performance, network → Pulse
+ * - console → Recall
+ * - custom → Signal
  */
-import { getConfig } from './config';
+import { getConfig, getEndpointForType, getApiKeyForType } from './config';
 
 export type EventType = 'error' | 'network' | 'performance' | 'console' | 'custom';
 
@@ -17,6 +23,11 @@ export interface BrowserEvent {
 
 interface QueuedEvent extends BrowserEvent {
   id: string;
+}
+
+// Group events by their target endpoint
+interface EventsByEndpoint {
+  [endpoint: string]: QueuedEvent[];
 }
 
 class Transport {
@@ -50,6 +61,15 @@ class Transport {
       return;
     }
 
+    // Check if we have an endpoint for this event type
+    const endpoint = getEndpointForType(type);
+    if (!endpoint) {
+      if (config.debug) {
+        console.warn(`[BrainzLab] No endpoint configured for event type: ${type}`);
+      }
+      return;
+    }
+
     const event: QueuedEvent = {
       id: this.generateEventId(),
       type,
@@ -80,33 +100,29 @@ class Transport {
     const events = [...this.queue];
     this.queue = [];
 
-    try {
-      const response = await fetch(`${config.endpoint}/api/v1/browser`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-          'X-BrainzLab-Session': this.sessionId,
-        },
-        body: JSON.stringify({
-          events,
-          context: {
-            projectId: config.projectId,
-            environment: config.environment,
-            service: config.service,
-            release: config.release,
-          },
-        }),
-        // Use keepalive for beforeunload
-        keepalive: true,
-      });
+    // Group events by their target endpoint
+    const eventsByEndpoint: EventsByEndpoint = {};
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    for (const event of events) {
+      const endpoint = getEndpointForType(event.type);
+      if (!endpoint) continue;
+
+      if (!eventsByEndpoint[endpoint]) {
+        eventsByEndpoint[endpoint] = [];
       }
+      eventsByEndpoint[endpoint].push(event);
+    }
+
+    // Send to each endpoint
+    const sendPromises = Object.entries(eventsByEndpoint).map(([endpoint, endpointEvents]) =>
+      this.sendToEndpoint(endpoint, endpointEvents)
+    );
+
+    try {
+      await Promise.all(sendPromises);
 
       if (config.debug) {
-        console.log(`[BrainzLab] Flushed ${events.length} events`);
+        console.log(`[BrainzLab] Flushed ${events.length} events to ${Object.keys(eventsByEndpoint).length} endpoints`);
       }
     } catch (error) {
       // Re-queue events on failure
@@ -115,6 +131,42 @@ class Transport {
       if (config.debug) {
         console.error('[BrainzLab] Flush failed:', error);
       }
+    }
+  }
+
+  private async sendToEndpoint(endpoint: string, events: QueuedEvent[]): Promise<void> {
+    const config = getConfig();
+
+    // Get API key for this event type (use first event's type)
+    const eventType = events[0]?.type || 'custom';
+    const apiKey = getApiKeyForType(eventType) || config.apiKey;
+
+    if (!apiKey) {
+      throw new Error(`No API key configured for event type: ${eventType}`);
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'X-BrainzLab-Session': this.sessionId,
+      },
+      body: JSON.stringify({
+        events,
+        context: {
+          projectId: config.projectId,
+          environment: config.environment,
+          service: config.service,
+          release: config.release,
+        },
+      }),
+      // Use keepalive for beforeunload
+      keepalive: true,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
   }
 

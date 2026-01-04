@@ -8,7 +8,9 @@ export {
   configure,
   getConfig,
   isConfigured,
+  getEndpointForType,
   type BrainzLabConfig,
+  type ProductEndpoints,
 } from './config';
 
 // Transport
