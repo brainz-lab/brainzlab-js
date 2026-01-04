@@ -48,6 +48,14 @@ export {
   teardownConsoleTracking,
 } from './utils/console';
 
+// Distributed tracing
+export {
+  getTraceContext,
+  getTraceHeaders,
+  formatTraceparent,
+  type TraceContext,
+} from './utils/trace';
+
 // Stimulus Controller
 export { default as BrainzlabController } from './controllers/brainzlab_controller';
 
@@ -60,6 +68,7 @@ import { setupErrorTracking } from './utils/errors';
 import { setupNetworkTracking } from './utils/network';
 import { setupPerformanceTracking } from './utils/performance';
 import { setupConsoleTracking } from './utils/console';
+import { getTraceContext, getTraceHeaders } from './utils/trace';
 
 export function init(config: BrainzLabConfig): void {
   configure(config);
@@ -92,7 +101,11 @@ export function init(config: BrainzLabConfig): void {
   });
 
   if (config.debug) {
+    const traceCtx = getTraceContext();
     console.log('[BrainzLab] Initialized with session:', getSessionId());
+    if (traceCtx) {
+      console.log('[BrainzLab] Trace context:', traceCtx.traceId, '(parent:', traceCtx.parentSpanId || 'none', ')');
+    }
   }
 }
 
@@ -103,6 +116,8 @@ export default {
   getSessionId,
   sendEvent,
   flushEvents,
+  getTraceContext,
+  getTraceHeaders,
   captureError: () => import('./utils/errors').then((m) => m.captureError),
   captureMessage: () => import('./utils/errors').then((m) => m.captureMessage),
 };

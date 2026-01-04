@@ -8,6 +8,7 @@
  * - custom → Signal
  */
 import { getConfig, getEndpointForType, getApiKeyForType } from './config';
+import { getTraceContext, initTraceContext, formatTraceparent, type TraceContext } from './utils/trace';
 
 export type EventType = 'error' | 'network' | 'performance' | 'console' | 'custom';
 
@@ -18,6 +19,10 @@ export interface BrowserEvent {
   userAgent: string;
   sessionId: string;
   requestId?: string;
+  // Distributed tracing
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
   data: Record<string, unknown>;
 }
 
@@ -34,11 +39,23 @@ class Transport {
   private queue: QueuedEvent[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionId: string;
+  private traceContext: TraceContext | null = null;
 
   constructor() {
     this.sessionId = this.generateSessionId();
+    this.initializeTraceContext();
     this.setupFlushTimer();
     this.setupBeforeUnload();
+  }
+
+  private initializeTraceContext(): void {
+    const config = getConfig();
+    // Initialize trace context from server-provided values
+    this.traceContext = initTraceContext({
+      traceId: config.traceId,
+      parentSpanId: config.parentSpanId,
+      sampled: config.sampled,
+    });
   }
 
   private generateSessionId(): string {
@@ -51,6 +68,10 @@ class Transport {
 
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  getTraceContext(): TraceContext | null {
+    return this.traceContext;
   }
 
   send(type: EventType, data: Record<string, unknown>, requestId?: string): void {
@@ -78,6 +99,10 @@ class Transport {
       userAgent: navigator.userAgent,
       sessionId: this.sessionId,
       requestId,
+      // Include trace context for distributed tracing
+      traceId: this.traceContext?.traceId,
+      spanId: this.traceContext?.spanId,
+      parentSpanId: this.traceContext?.parentSpanId,
       data,
     };
 
@@ -170,13 +195,22 @@ class Transport {
       return;
     }
 
+    // Build headers with traceparent for distributed tracing
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-BrainzLab-Session': this.sessionId,
+    };
+
+    // Add traceparent header for distributed tracing
+    const traceparent = formatTraceparent(this.traceContext || undefined);
+    if (traceparent) {
+      headers['traceparent'] = traceparent;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'X-BrainzLab-Session': this.sessionId,
-      },
+      headers,
       body: JSON.stringify({
         events,
         context: {
@@ -184,6 +218,9 @@ class Transport {
           environment: config.environment,
           service: config.service,
           release: config.release,
+          // Include trace context in body as well for servers that don't read headers
+          traceId: this.traceContext?.traceId,
+          parentSpanId: this.traceContext?.parentSpanId,
         },
       }),
       // Use keepalive for beforeunload

@@ -1,13 +1,16 @@
 /**
  * Network Monitoring Module
  * Intercepts fetch and XMLHttpRequest to track network requests
+ * Also injects traceparent headers for distributed tracing
  */
 import { sendEvent } from '../transport';
 import { getConfig } from '../config';
+import { getTraceHeaders } from './trace';
 
 let originalFetch: typeof fetch | null = null;
 let originalXHROpen: typeof XMLHttpRequest.prototype.open | null = null;
 let originalXHRSend: typeof XMLHttpRequest.prototype.send | null = null;
+let originalXHRSetRequestHeader: typeof XMLHttpRequest.prototype.setRequestHeader | null = null;
 
 interface NetworkRequestData {
   method: string;
@@ -66,7 +69,7 @@ function getResponseSize(response: Response): number | undefined {
 }
 
 /**
- * Wrap fetch to track network requests
+ * Wrap fetch to track network requests and inject traceparent headers
  */
 function wrapFetch(): void {
   originalFetch = window.fetch;
@@ -77,6 +80,20 @@ function wrapFetch(): void {
   ): Promise<Response> {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method || 'GET';
+
+    // Inject traceparent header for distributed tracing (for non-ignored URLs)
+    const traceHeaders = getTraceHeaders();
+    if (Object.keys(traceHeaders).length > 0 && !shouldIgnoreUrl(url)) {
+      const existingHeaders = init?.headers || {};
+      const headers = new Headers(existingHeaders as HeadersInit);
+
+      // Only add traceparent if not already present
+      if (!headers.has('traceparent') && traceHeaders.traceparent) {
+        headers.set('traceparent', traceHeaders.traceparent);
+      }
+
+      init = { ...init, headers };
+    }
 
     if (shouldIgnoreUrl(url)) {
       return originalFetch!.call(window, input, init);
@@ -151,6 +168,18 @@ function wrapXHR(): void {
   XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null): void {
     const xhr = this;
     const requestData = pendingXHRs.get(xhr);
+
+    // Inject traceparent header for distributed tracing
+    if (requestData && !shouldIgnoreUrl(requestData.url)) {
+      const traceHeaders = getTraceHeaders();
+      if (traceHeaders.traceparent) {
+        try {
+          xhr.setRequestHeader('traceparent', traceHeaders.traceparent);
+        } catch {
+          // Header may have already been set, ignore
+        }
+      }
+    }
 
     if (!requestData || shouldIgnoreUrl(requestData.url)) {
       return originalXHRSend!.call(this, body);

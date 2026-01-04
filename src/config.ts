@@ -51,6 +51,12 @@ export interface BrainzLabConfig {
   // Release/version identifier
   release?: string;
 
+  // Distributed tracing context (from server)
+  // These link browser events to server-side traces
+  traceId?: string;
+  parentSpanId?: string;
+  sampled?: boolean;
+
   // Enable debug logging
   debug?: boolean;
 
