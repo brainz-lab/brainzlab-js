@@ -1,0 +1,47 @@
+{
+  "name": "@brainzlab/js",
+  "version": "0.1.0",
+  "description": "BrainzLab JavaScript SDK - Stimulus controllers for full-stack observability",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "brainzlab",
+    "monitoring",
+    "observability",
+    "stimulus",
+    "hotwire",
+    "apm",
+    "error-tracking",
+    "performance"
+  ],
+  "author": "Brainz Lab",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brainz-lab/brainzlab-js.git"
+  },
+  "peerDependencies": {
+    "@hotwired/stimulus": "^3.0.0"
+  },
+  "devDependencies": {
+    "@hotwired/stimulus": "^3.2.2",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/node": "^20.10.0",
+    "rollup": "^4.9.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.0"
+  }
+}
