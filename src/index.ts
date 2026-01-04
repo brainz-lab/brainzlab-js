@@ -53,7 +53,7 @@ export { default as BrainzlabController } from './controllers/brainzlab_controll
  * Initialize BrainzLab with all monitoring features
  */
 import { configure, type BrainzLabConfig } from './config';
-import { sendEvent, getSessionId } from './transport';
+import { sendEvent, getSessionId, flushEvents } from './transport';
 import { setupErrorTracking } from './utils/errors';
 import { setupNetworkTracking } from './utils/network';
 import { setupPerformanceTracking } from './utils/performance';

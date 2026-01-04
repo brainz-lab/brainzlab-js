@@ -1,6 +1,7 @@
 {
   "name": "@brainzlab/js",
   "version": "0.1.0",
+  "type": "module",
   "description": "BrainzLab JavaScript SDK - Stimulus controllers for full-stack observability",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -43,5 +44,8 @@
     "rollup": "^4.9.0",
     "tslib": "^2.6.2",
     "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@brainzlab/js": "../brainzlab-js"
   }
 }
